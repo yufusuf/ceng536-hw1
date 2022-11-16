@@ -1,0 +1,3 @@
+#see created posix sems
+ls -al /dev/shm/sem.rdrwrtr_sem_mutex /dev/shm/sem.rdrwrtr_sem_write
+
