@@ -2,7 +2,6 @@
 
 #define __INCLUDES
 
-#define SHMEM_KEY 0x313131
 #include <errno.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -16,34 +15,38 @@
 #include <sys/time.h>
 #include <time.h>
 
-#define QUE_SIZE 10000
+#define QUE_SIZE 100
+#define SHMEM_KEY 0x313131
 
 typedef struct _log_entry{
     double anomality;
     size_t n_notprocessed_analyzers; 
     char content[512];
-    uint64_t timestamp;
     pthread_mutex_t log_mutex;
 } log_entry;
 
 typedef struct _shmem_data{
     log_entry que[QUE_SIZE];
-    size_t buffer_index;
+    int q_front;
+    int q_rear;
     size_t item_count;
     int n_analyzers;
     char wake_reporter;
+    char wake_analyzers;
     pthread_mutex_t analyzers_lock;
     pthread_cond_t analyzers_cond;
     pthread_mutex_t shmem_lock;
     pthread_cond_t reporter_cond;
 } shmem_data_s;
-
 uint64_t get_timestamp_ms(void)
 {
     struct timeval tv;
     gettimeofday(&tv, NULL);
     return (((uint64_t)tv.tv_sec)*1000) + (tv.tv_usec/1000);
 }
-
-
+int isFull(shmem_data_s *s)
+{
+   return ((s->q_front == s->q_rear + 1) || 
+           (s->q_front == 0 && s->q_rear == QUE_SIZE - 1));
+}
 #endif
