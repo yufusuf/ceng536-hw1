@@ -19,7 +19,7 @@ int main(int argc, char **argv)
         perror("error: input format ./logger shmmemaddr port");
         exit(EXIT_FAILURE);
     }
-    key_t shmemkey = SHMEM_KEY; // should be argv[1];
+    key_t shmemkey = atoi(argv[1]); // should be argv[1];
     port_number = atoi(argv[2]);
     
     // create socket with given port
@@ -32,7 +32,7 @@ int main(int argc, char **argv)
     
 
     // connect to shared memory
-    int shmid = shmget(SHMEM_KEY, 0, 0);
+    int shmid = shmget(shmemkey, 0, 0);
     if(shmid < 0)
     {
         perror("logger:shmid");
@@ -48,10 +48,9 @@ int main(int argc, char **argv)
         // printf("logger waiting for data...\n");
         if((recv_len = recvfrom(sd, buf, BUFSIZE, 0, NULL ,NULL)) == -1)
         {
-            perror("logger:rcv");
+           perror("logger:rcv");
             exit(1);
         }
-        printf("Data: %s", buf);
         put_data_to_shmem(buf);
     } 
 
@@ -83,13 +82,24 @@ void put_data_to_shmem(char *buf)
     // put anomality in
     // init n_notprocessed_analyzers
     // put content in
-    // init mutex:w
+    // init mutex
     // signal analyzers
     
     pthread_mutex_lock(&(shmem->shmem_lock));
-    if(shmem->n_analyzers > 0 && !isFull(shmem))
+    if(shmem->n_analyzers == 0)
     {
-        printf("logger with port %d got the shmem_lock\n", port_number);
+        pthread_mutex_unlock(&(shmem->shmem_lock));
+        return;
+    }
+    else {
+        while(isFull(shmem)){
+            fprintf(stderr, "que_isfull\n");
+            pthread_cond_wait(&(shmem->que_full), &(shmem->shmem_lock));
+            memset(buf, 0, BUFSIZE);
+            pthread_mutex_unlock(&(shmem->shmem_lock));
+            return;
+        }
+       // printf("logger with port %d got the shmem_lock\n", port_number);
 
         // enque item
         if(shmem->q_front == -1)
@@ -105,7 +115,7 @@ void put_data_to_shmem(char *buf)
         l->anomality = 0;
         l->n_notprocessed_analyzers = shmem->n_analyzers;
 
-        printf("logger inserted entry at %d: %f, %lu, %s,  rear: %d\n",
+        printf("logger inserted entry at %d: %f, %d, %s,  rear: %d\n",
                 shmem->q_front, l->anomality, l->n_notprocessed_analyzers, l->content
                 , shmem->q_rear);
 
@@ -115,21 +125,14 @@ void put_data_to_shmem(char *buf)
         pthread_mutex_init(&(l->log_mutex), &attr);
 
         // wake up analyzers 
-        shmem->wake_analyzers = 1;
+        pthread_mutex_unlock(&(shmem->shmem_lock));
         pthread_cond_broadcast(&(shmem->analyzers_cond));
     }
-    else if (isFull(shmem))
-    {
-        //sleep the logger
-        // TODO: create logger waiting var
-        fprintf(stderr, "que_isfull\n");
-    }
-    pthread_mutex_unlock(&(shmem->shmem_lock));
 
     
-    printf("logger with port %d released the shmem_lock\n", port_number);
+  //  printf("logger with port %d released the shmem_lock\n", port_number);
     memset(buf, 0, BUFSIZE);
-      
+    return; 
 
 } 
 
