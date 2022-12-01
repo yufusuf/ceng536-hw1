@@ -15,12 +15,13 @@
 #include <sys/time.h>
 #include <time.h>
 #include <signal.h>
-#define QUE_SIZE 100 
+#define QUE_SIZE 10000 
 #define SHMEM_KEY 0x313131
 
 typedef struct _log_entry{
     double anomality;
     int n_notprocessed_analyzers; 
+    char isFull;
     char content[512];
     pthread_mutex_t log_mutex;
 } log_entry;
@@ -31,11 +32,15 @@ typedef struct _shmem_data{
     int q_rear;
     size_t item_count;
     int n_analyzers;
+    int n_loggers;
+    int working_analyzers;
+    int logged_loggers;
     pthread_mutex_t analyzers_lock;
     pthread_cond_t analyzers_cond;
     pthread_mutex_t shmem_lock;
     pthread_cond_t reporter_cond;
     pthread_cond_t que_full;
+    pthread_cond_t wait_analyzers;
 } shmem_data_s;
 uint64_t get_timestamp_ms(void)
 {

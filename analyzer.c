@@ -55,7 +55,7 @@ int main(int argc, char **argv)
         {
             fprintf(stderr, "analyzing %d\n", i);
             log_entry *l = &(shmem->que[i]);
-            if(l == NULL)
+            if(!l->isFull)
             {
                 fprintf(stderr, "entry is null\n");
                 i = (i + 1) % QUE_SIZE;
@@ -65,8 +65,8 @@ int main(int argc, char **argv)
             l->n_notprocessed_analyzers--;
             if(l->n_notprocessed_analyzers == 0)
             {
-                signal_rprt = 1;
                 printf("reporter signalled\n");
+                pthread_cond_signal(&(shmem->reporter_cond));
             }
             if(regexec(&regEx, l->content, 0, NULL, 0) == 0)
             {
@@ -82,11 +82,29 @@ int main(int argc, char **argv)
             pthread_mutex_unlock(&(l->log_mutex)); 
             i = (i + 1) % QUE_SIZE;
         }
-        if(signal_rprt)
+        //if(signal_rprt)
+        //{
+        //    pthread_cond_signal(&(shmem->reporter_cond)); 
+        //    signal_rprt = 0 ;
+        //}
+        //pthread_mutex_lock(&(shmem->shmem_lock));
+        //if( --shmem->working_analyzers == 0)
+        //{
+        //    shmem->logged_loggers = 0;
+        //    pthread_cond_broadcast(&(shmem->wait_analyzers));
+        //    pthread_cond_signal(&(shmem->reporter_cond));
+        //}
+        //pthread_mutex_unlock(&(shmem->shmem_lock));
+        pthread_mutex_lock(&(shmem->shmem_lock));
+        if( --shmem->working_analyzers == 0)
         {
-            pthread_cond_signal(&(shmem->reporter_cond)); 
-            signal_rprt = 0 ;
+            pthread_cond_signal(&(shmem->reporter_cond));
+            shmem->logged_loggers = 0;
+            pthread_cond_broadcast(&(shmem->wait_analyzers));
+            printf("reporter signalled\n");
+
         }
+        pthread_mutex_unlock(&(shmem->shmem_lock));
 
     }
     pthread_mutex_lock(&(shmem->shmem_lock));

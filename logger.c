@@ -5,15 +5,18 @@
 
 #define BUFSIZE 512
 shmem_data_s * shmem;
+char running = 1;
+int port_number;
 
 int create_socket(int port_number);
 void put_data_to_shmem(char *buf);
-
-
-int port_number;
-
+void sig_handler(int signum)
+{
+    running = 0;
+}
 int main(int argc, char **argv)
 {
+
     if(argc < 3)
     {
         perror("error: input format ./logger shmmemaddr port");
@@ -39,11 +42,13 @@ int main(int argc, char **argv)
         fprintf(stderr, "logger on port %d\n", port_number);
         exit(2);
     }
-
     printf("shmid: %d\n", shmid);
     shmem = shmat(shmid, 0, 0);
-    
-    while(1)
+    pthread_mutex_lock(&(shmem->shmem_lock));
+    shmem->n_loggers++;
+    pthread_mutex_unlock(&(shmem->shmem_lock));
+    signal(SIGINT, sig_handler);
+    while(running)
     {
         // printf("logger waiting for data...\n");
         if((recv_len = recvfrom(sd, buf, BUFSIZE, 0, NULL ,NULL)) == -1)
@@ -53,7 +58,10 @@ int main(int argc, char **argv)
         }
         put_data_to_shmem(buf);
     } 
-
+    
+    pthread_mutex_lock(&(shmem->shmem_lock));
+    shmem->n_loggers--;
+    pthread_mutex_unlock(&(shmem->shmem_lock));
     return 0;
 }
 
@@ -99,7 +107,13 @@ void put_data_to_shmem(char *buf)
             pthread_mutex_unlock(&(shmem->shmem_lock));
             return;
         }
-       // printf("logger with port %d got the shmem_lock\n", port_number);
+        // printf("logger with port %d got the shmem_lock\n", port_number);
+         
+        while(shmem->working_analyzers > 0)
+        {
+            pthread_cond_wait(&(shmem->wait_analyzers), &(shmem->shmem_lock));
+        }
+
 
         // enque item
         if(shmem->q_front == -1)
@@ -114,7 +128,7 @@ void put_data_to_shmem(char *buf)
         strncpy(l->content, buf, BUFSIZE);
         l->anomality = 0;
         l->n_notprocessed_analyzers = shmem->n_analyzers;
-
+        l->isFull = 1; 
         printf("logger inserted entry at %d: %f, %d, %s,  rear: %d\n",
                 shmem->q_front, l->anomality, l->n_notprocessed_analyzers, l->content
                 , shmem->q_rear);
@@ -125,8 +139,15 @@ void put_data_to_shmem(char *buf)
         pthread_mutex_init(&(l->log_mutex), &attr);
 
         // wake up analyzers 
+        pthread_mutex_lock(&(shmem->analyzers_lock));
+        if(++shmem->logged_loggers == shmem->n_loggers)
+        {
+            shmem->working_analyzers = shmem->n_analyzers;
+            pthread_cond_broadcast(&(shmem->analyzers_cond));
+        }
+        pthread_mutex_unlock(&(shmem->analyzers_lock));
+
         pthread_mutex_unlock(&(shmem->shmem_lock));
-        pthread_cond_broadcast(&(shmem->analyzers_cond));
     }
 
     
